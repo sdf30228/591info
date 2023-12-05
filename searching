@@ -3,51 +3,51 @@ from bs4 import BeautifulSoup
 import re
 import emoji
 
-def get_house_info():
+def fetch_591_info():
     url = "https://sale.591.com.tw/?shType=list&regionid=1&section=7&shape=1,3&publish_day=1&houseage=40_,30_40&floor=2_6&price=0&totalRows=9&firstRow=0"
-
-    headers = {
-        # Add headers if needed
-    }
-
-    response = requests.get(url=url, headers=headers)
+    response = requests.get(url)
     if response.status_code == 200:
-        return response.text
+        soup = BeautifulSoup(response.text, "html.parser")
+        return soup
     else:
         return None
 
-def parse_house_info(html):
-    if html:
-        soup = BeautifulSoup(html, "html.parser")
+def parse_info(soup):
+    house_info_list = []
+    if soup:
         listInfoUl = soup.find_all("ul", class_="listInfo clearfix")
-        house_info_list = []
-
         for ul in listInfoUl:
+            house = {}
             img = ul.find("img").get("data-original")
             title = ul.find("a").getText()
             detailUrl = ul.find("a").get("href")
             price = ul.find("div", class_="price").getText().strip()
-
-            wordDetail = ' '.join([de.getText().replace(" ", "").replace("\n", "") for de in ul.find_all("p", class_="lightBox")])
-
+            wordDetail = ''
+            for de in ul.find_all("p", class_="lightBox"):
+                wordDetail = wordDetail + " | " + de.getText().replace(" ", "").replace("\n", "")
             uptime = ''
             for up in ul.find_all("em"):
                 pattern = re.compile('更新')
                 if len(pattern.findall(up.getText())) > 0:
                     uptime = up.getText()
+            house['img'] = img
+            house['title'] = title
+            house['detailUrl'] = detailUrl
+            house['price'] = price
+            house['wordDetail'] = wordDetail
+            house['uptime'] = uptime
+            house_info_list.append(house)
+    return house_info_list
 
-            house_info_list.append({
-                'title': title,
-                'img': img,
-                'detailUrl': detailUrl,
-                'price': price,
-                'wordDetail': wordDetail,
-                'uptime': uptime
-            })
-
-        return house_info_list
-    else:
-        return None
+def send_line_notify(message):
+    token = 'eiFHdLFbYfCp76Vf8OnvaZY8ldKO5173dKw37nV86AL'
+    headers = {
+        'Authorization': f'Bearer {token}'
+    }
+    payload = {
+        'message': message
+    }
+    requests.post('https://notify-api.line.me/api/notify', headers=headers, data=payload)
 
 def filter_and_notify(info_list):
     if info_list:
@@ -56,19 +56,14 @@ def filter_and_notify(info_list):
             if len(pattern.findall(house['uptime'])) > 0:
                 pattern = re.compile('(.*)(?=小時)')
                 hours = re.search(pattern, house['uptime']).group(1)
-                if int(hours) <= 3:
+                if int(hours) <= 1:
                     msg = f"{house['title']} {house['price']} {house['wordDetail']} {house['uptime']} {house['detailUrl']}"
-                    # Use 'msg' to notify via LINE
-                    # send_line_notify(msg)
+                    send_line_notify(msg)
                     print(msg)
     else:
         print("No house info available")
 
-def main():
-    html = get_house_info()
-    house_info_list = parse_house_info(html)
-    filter_and_notify(house_info_list)
-
-if __name__ == "__main__":
-    main()
-
+# Main logic
+soup = fetch_591_info()
+house_info_list = parse_info(soup)
+filter_and_notify(house_info_list)
