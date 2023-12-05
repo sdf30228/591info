@@ -1,0 +1,54 @@
+import requests
+from bs4 import BeautifulSoup
+import re
+import emoji
+
+# 591 租屋網站的 URL
+url = "https://sale.591.com.tw/?shType=list&regionid=1&section=7&shape=1,3&publish_day=1&houseage=40_,30_40&floor=2_6&price=0&totalRows=9&firstRow=0"
+
+# LINE Notify 權杖
+line_notify_token = "eiFHdLFbYfCp76Vf8OnvaZY8ldKO5173dKw37nV86AL"
+
+# 設置 headers，模擬瀏覽器訪問
+headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36',
+    'Referer': 'https://sale.591.com.tw/',
+}
+
+# 發送 GET 請求獲取網頁內容
+response = requests.get(url, headers=headers)
+
+# 使用 BeautifulSoup 解析網頁內容
+soup = BeautifulSoup(response.content, "html.parser")
+
+# 找到包含租屋資訊的元素，這裡以列表為例
+houses = soup.find_all("ul", class_="listInfo clearfix")
+
+# 提取符合條件的租屋資訊並傳送 LINE 訊息
+for house in houses:
+    # 提取更新時間
+    uptime = house.find("em", text=re.compile('更新')).getText()
+    
+    # 取得3小時內更新的內容
+    pattern = re.compile('小時內更新')
+    if len(pattern.findall(uptime)) > 0:
+        pattern = re.compile('(.*)(?=小時)')
+        hours = re.search(pattern, uptime).group(1)
+        if int(hours) <= 3:
+            img = house.find("img").get("data-original")
+            title = house.find("a").getText()
+            price = house.find("div", class_="price").getText().strip()
+            wordDetail = ' | '.join([de.getText().replace(" ", "").replace("\n", "") for de in house.find_all("p", class_="lightBox")])
+            detailUrl = house.find("a").get("href")
+            
+            # LINE 訊息內容
+            msg = f"{title} - {price}\n{wordDetail}\n{uptime}\n{detailUrl}"
+            
+            # 傳送 LINE 訊息
+            headers = {
+                "Authorization": "Bearer " + line_notify_token,
+                "Content-Type":  "application/x-www-form-urlencoded"
+            }
+            message = {'message': msg}
+            line_notify_api = "https://notify-api.line.me/api/notify"
+            requests.post(line_notify_api, headers=headers, data=message)
