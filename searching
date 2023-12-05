@@ -3,52 +3,72 @@ from bs4 import BeautifulSoup
 import re
 import emoji
 
-# 591 租屋網站的 URL
-url = "https://sale.591.com.tw/?shType=list&regionid=1&section=7&shape=1,3&publish_day=1&houseage=40_,30_40&floor=2_6&price=0&totalRows=9&firstRow=0"
+def get_house_info():
+    url = "https://sale.591.com.tw/?shType=list&regionid=1&section=7&shape=1,3&publish_day=1&houseage=40_,30_40&floor=2_6&price=0&totalRows=9&firstRow=0"
 
-# LINE Notify 權杖
-line_notify_token = "eiFHdLFbYfCp76Vf8OnvaZY8ldKO5173dKw37nV86AL"
+    headers = {
+        # Add headers if needed
+    }
 
-# 設置 headers，模擬瀏覽器訪問
-headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36',
-    'Referer': 'https://sale.591.com.tw/',
-}
+    response = requests.get(url=url, headers=headers)
+    if response.status_code == 200:
+        return response.text
+    else:
+        return None
 
-# 發送 GET 請求獲取網頁內容
-response = requests.get(url, headers=headers)
+def parse_house_info(html):
+    if html:
+        soup = BeautifulSoup(html, "html.parser")
+        listInfoUl = soup.find_all("ul", class_="listInfo clearfix")
+        house_info_list = []
 
-# 使用 BeautifulSoup 解析網頁內容
-soup = BeautifulSoup(response.content, "html.parser")
+        for ul in listInfoUl:
+            img = ul.find("img").get("data-original")
+            title = ul.find("a").getText()
+            detailUrl = ul.find("a").get("href")
+            price = ul.find("div", class_="price").getText().strip()
 
-# 找到包含租屋資訊的元素，這裡以列表為例
-houses = soup.find_all("ul", class_="listInfo clearfix")
+            wordDetail = ' '.join([de.getText().replace(" ", "").replace("\n", "") for de in ul.find_all("p", class_="lightBox")])
 
-# 提取符合條件的租屋資訊並傳送 LINE 訊息
-for house in houses:
-    # 提取更新時間
-    uptime = house.find("em", text=re.compile('更新')).getText()
-    
-    # 取得3小時內更新的內容
-    pattern = re.compile('小時內更新')
-    if len(pattern.findall(uptime)) > 0:
-        pattern = re.compile('(.*)(?=小時)')
-        hours = re.search(pattern, uptime).group(1)
-        if int(hours) <= 3:
-            img = house.find("img").get("data-original")
-            title = house.find("a").getText()
-            price = house.find("div", class_="price").getText().strip()
-            wordDetail = ' | '.join([de.getText().replace(" ", "").replace("\n", "") for de in house.find_all("p", class_="lightBox")])
-            detailUrl = house.find("a").get("href")
-            
-            # LINE 訊息內容
-            msg = f"{title} - {price}\n{wordDetail}\n{uptime}\n{detailUrl}"
-            
-            # 傳送 LINE 訊息
-            headers = {
-                "Authorization": "Bearer " + line_notify_token,
-                "Content-Type":  "application/x-www-form-urlencoded"
-            }
-            message = {'message': msg}
-            line_notify_api = "https://notify-api.line.me/api/notify"
-            requests.post(line_notify_api, headers=headers, data=message)
+            uptime = ''
+            for up in ul.find_all("em"):
+                pattern = re.compile('更新')
+                if len(pattern.findall(up.getText())) > 0:
+                    uptime = up.getText()
+
+            house_info_list.append({
+                'title': title,
+                'img': img,
+                'detailUrl': detailUrl,
+                'price': price,
+                'wordDetail': wordDetail,
+                'uptime': uptime
+            })
+
+        return house_info_list
+    else:
+        return None
+
+def filter_and_notify(info_list):
+    if info_list:
+        for house in info_list:
+            pattern = re.compile('小時內更新')
+            if len(pattern.findall(house['uptime'])) > 0:
+                pattern = re.compile('(.*)(?=小時)')
+                hours = re.search(pattern, house['uptime']).group(1)
+                if int(hours) <= 3:
+                    msg = f"{house['title']} {house['price']} {house['wordDetail']} {house['uptime']} {house['detailUrl']}"
+                    # Use 'msg' to notify via LINE
+                    # send_line_notify(msg)
+                    print(msg)
+    else:
+        print("No house info available")
+
+def main():
+    html = get_house_info()
+    house_info_list = parse_house_info(html)
+    filter_and_notify(house_info_list)
+
+if __name__ == "__main__":
+    main()
+
